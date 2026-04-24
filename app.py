@@ -1,27 +1,57 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# =========================
-# CONFIG
-# =========================
 st.set_page_config(page_title="Wellbeing Dashboard", layout="wide")
 
+# =========================
+# STYLE (clean minimal)
+# =========================
+st.markdown("""
+<style>
+.stApp {
+    background: #f8fafc;
+}
+
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+}
+
+h1 {
+    color: #1e3a8a;
+    margin-bottom: 0px;
+}
+
+h2 {
+    color: #334155;
+    margin-top: 2rem;
+}
+
+/* KPI spacing fix */
+div[data-testid="metric-container"] {
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    padding: 14px;
+    background: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+/* section spacing */
+section {
+    padding-top: 10px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# HEADER
+# =========================
 st.title("💙 Employee Wellbeing Dashboard")
-st.markdown("Monitor employee activity, health metrics, and wellbeing insights")
+st.caption("Analytics overview of employee health & activity")
 
-# =========================
-# HELPER FUNCTION
-# =========================
-def safe_int(val):
-    return int(val) if pd.notna(val) else 0
-
-def safe_float(val, digits=2):
-    return round(val, digits) if pd.notna(val) else 0
-
-def safe_display(val, suffix="", digits=2):
-    return f"{round(val, digits)}{suffix}" if pd.notna(val) else "-"
+st.divider()
 
 # =========================
 # LOAD DATA
@@ -34,14 +64,10 @@ def load_data():
     activity = pd.read_excel(file, sheet_name="activity_logs")
     mcu = pd.read_excel(file, sheet_name="mcu_records")
 
-    # JOIN DATA
     df = activity.merge(users, on="user_id", how="left")
     df = df.merge(mcu, on="user_id", how="left")
 
-    # Convert date
     df["start_date_local"] = pd.to_datetime(df["start_date_local"])
-
-    # Convert moving_time ke menit
     df["moving_time"] = pd.to_timedelta(df["moving_time"].astype(str)).dt.total_seconds() / 60
 
     return df
@@ -49,19 +75,13 @@ def load_data():
 df = load_data()
 
 # =========================
-# SIDEBAR FILTER
+# FILTER
 # =========================
 st.sidebar.header("Filter")
 
-selected_user = st.sidebar.selectbox(
-    "Select User", ["All"] + list(df["fullname"].dropna().unique())
-)
+selected_user = st.sidebar.selectbox("User", ["All"] + list(df["fullname"].dropna().unique()))
+selected_type = st.sidebar.selectbox("Activity Type", ["All"] + list(df["type"].dropna().unique()))
 
-selected_type = st.sidebar.selectbox(
-    "Activity Type", ["All"] + list(df["type"].dropna().unique())
-)
-
-# FILTER
 filtered_df = df.copy()
 
 if selected_user != "All":
@@ -71,132 +91,105 @@ if selected_type != "All":
     filtered_df = filtered_df[filtered_df["type"] == selected_type]
 
 # =========================
-# KPI
+# KPI (GROUPED SECTION)
 # =========================
-col1, col2, col3, col4 = st.columns(4)
+st.subheader("📊 Overview")
 
-total_distance = filtered_df["distance"].sum()
-avg_hr = filtered_df["average_heartrate"].mean()
-avg_bmi = filtered_df["BMI"].mean()
-total_activity = filtered_df["activity_id"].count()
+k1, k2, k3, k4 = st.columns(4)
 
-col1.metric("Total Distance (km)", safe_float(total_distance))
-col2.metric("Avg Heart Rate", safe_display(avg_hr, " bpm", 0))
-col3.metric("Avg BMI", safe_display(avg_bmi))
-col4.metric("Total Activities", total_activity)
+k1.metric("Distance", f"{filtered_df['distance'].sum():.2f} km")
+k2.metric("Avg HR", f"{filtered_df['average_heartrate'].mean():.0f} bpm")
+k3.metric("BMI", f"{filtered_df['BMI'].mean():.2f}")
+k4.metric("Activities", int(filtered_df["activity_id"].count()))
+
+st.divider()
 
 # =========================
-# INSIGHT
+# INSIGHT (SEPARATE CARD)
 # =========================
-st.subheader("🧠 Key Insights")
+st.subheader("🧠 Insight Story")
 
 if not filtered_df.empty:
+
     top_user = (
         filtered_df.groupby("fullname")["moving_time"]
         .sum()
         .sort_values(ascending=False)
-        .head(1)
     )
 
-    most_active_type = filtered_df["type"].value_counts()
+    most_active_type = filtered_df["type"].value_counts().idxmax()
 
-    st.markdown(f"""
-    - 🏆 **Most active user**: **{top_user.index[0]}** with total moving time **{safe_int(top_user.values[0])} minutes**
-    - 🏃 **Most common activity**: **{most_active_type.idxmax() if not most_active_type.empty else "-"}**
-    - 💓 **Average heart rate**: **{safe_display(avg_hr, " bpm", 0)}**
-    - ⚖️ **Average BMI**: **{safe_display(avg_bmi)}**
-    """)
-else:
-    st.warning("No data available")
+    st.info(
+        f"🏆 **{top_user.index[0]}** is the most active employee with "
+        f"**{top_user.values[0]:.0f} minutes** total activity.\n\n"
+        f"🏃 Most frequent activity type is **{most_active_type}**."
+    )
+
+st.divider()
 
 # =========================
-# CHARTS
+# CHART GRID (IMPORTANT FIX)
 # =========================
-st.subheader("📈 Activity Over Time")
+st.subheader("📈 Analytics")
 
-if not filtered_df.empty:
+c1, c2 = st.columns(2)
+
+with c1:
     fig1 = px.line(
         filtered_df,
         x="start_date_local",
         y="distance",
         color="type",
-        markers=True
+        markers=True,
+        template="plotly_white"
     )
     st.plotly_chart(fig1, use_container_width=True)
-else:
-    st.info("No data for chart")
 
-st.subheader("🏃 Activity Distribution")
-
-if not filtered_df.empty:
+with c2:
     fig2 = px.pie(
         filtered_df,
         names="type",
+        hole=0.4,
+        template="plotly_white"
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-st.subheader("💓 Heart Rate vs Distance")
+fig3 = px.scatter(
+    filtered_df,
+    x="distance",
+    y="average_heartrate",
+    color="type",
+    template="plotly_white"
+)
+st.plotly_chart(fig3, use_container_width=True)
+
+st.divider()
+
+# =========================
+# LEADERBOARD (CLEAR SECTION)
+# =========================
+st.subheader("🏆 Leaderboard")
 
 if not filtered_df.empty:
-    fig3 = px.scatter(
-        filtered_df,
-        x="distance",
-        y="average_heartrate",
-        color="type",
-        hover_data=["fullname"]
-    )
-    st.plotly_chart(fig3, use_container_width=True)
 
-# =========================
-# MCU ANALYSIS
-# =========================
-st.subheader("🧬 BMI Category Distribution")
-
-if "BMICat" in filtered_df.columns and not filtered_df.empty:
-    fig4 = px.histogram(
-        filtered_df,
-        x="BMICat",
-        color="BMICat"
-    )
-    st.plotly_chart(fig4, use_container_width=True)
-
-# =========================
-# LEADERBOARD
-# =========================
-st.subheader("🏆 Leaderboard (Most Active Users)")
-
-if not filtered_df.empty:
     leaderboard = (
-        filtered_df.groupby(["fullname", "user_id"])["moving_time"]
+        filtered_df.groupby("fullname")["moving_time"]
         .sum()
         .reset_index()
-        .sort_values(by="moving_time", ascending=False)
-        .reset_index(drop=True)
+        .sort_values("moving_time", ascending=False)
     )
 
     leaderboard["Rank"] = leaderboard.index + 1
-    leaderboard["moving_time_hours"] = (leaderboard["moving_time"] / 60).round(2)
+    leaderboard["Hours"] = (leaderboard["moving_time"] / 60).round(2)
 
-    leaderboard = leaderboard[["Rank", "fullname", "user_id", "moving_time_hours"]]
-
-    # TOP 3
-    top3 = leaderboard.head(3)
-    medals = ["🥇", "🥈", "🥉"]
-
-    cols = st.columns(3)
-
-    for i in range(min(3, len(top3))):
-        cols[i].metric(
-            f"{medals[i]} {top3.iloc[i]['fullname']}",
-            f"{top3.iloc[i]['moving_time_hours']:.2f} hrs"
-        )
+    leaderboard = leaderboard[["Rank", "fullname", "Hours"]]
 
     st.dataframe(leaderboard, use_container_width=True)
-else:
-    st.warning("No leaderboard data")
+
+st.divider()
 
 # =========================
-# TABLE
+# RAW DATA
 # =========================
-st.subheader("📋 Data Preview")
+st.subheader("📋 Raw Data")
 st.dataframe(filtered_df)
