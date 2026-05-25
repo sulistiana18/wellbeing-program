@@ -94,4 +94,4 @@ The dashboard provides insights into employee performance, activity patterns, an
 
 ### 2. Run App
 
-streamlit run app.py
+python -m streamlit run app.py
